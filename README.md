@@ -15,8 +15,8 @@ After installing, you must create a JSON file named `Credentials.json` which con
 These credentials are generated when you create a Shopify Private App.
 
 # Running the app
-## If you will setup a virtual environment
-If you have setup a virtual environment in the source directory, you have to name it `.venv` to make use of the below shell scripts.
+## If you will use venv to setup a virtual environment
+If you have setup a virtual environment using `venv` in the source directory, you have to name it `.venv` to make use of the below shell scripts.
 - For Windows, run `runapp.bat` to start the app.
 - For any POSIX-based OS like macOS or Linux, run `runapp.sh` to start the app.
 
