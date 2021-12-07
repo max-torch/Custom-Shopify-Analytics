@@ -10,6 +10,7 @@ visit http://127.0.0.1:8050/ in your web browser.
 from time import time
 import json
 import webbrowser
+from urllib.parse import urlparse
 
 import dash
 from dash import dcc
@@ -204,7 +205,29 @@ def generate_figures(orders, billing_address):
     fig_location = px.bar(view, x='Province_or_City', y='yaxis', labels={'xaxis': xaxisname, 'yaxis': 'Quantity of Orders'}, title=title, hover_data=["xaxis"])
     fig_location.update_layout(barmode='stack', xaxis={'categoryorder':'total descending'})
 
-    return fig_hours_day, fig_days_week, fig_days_month, fig_months_year, fig_weeks_year, fig_location
+    # This section plots the referring sites
+    def parse_url(url):
+        parsed = urlparse(url)
+        return parsed.netloc
+
+    view = (
+        pd.DataFrame(
+            orders.referring_site
+            .fillna("")
+            .apply(parse_url)
+            .replace("", "No referring site or no data")
+            .value_counts()
+        )
+        .reset_index(drop=False)
+        .rename(columns={'index': 'xaxis', 'referring_site': 'yaxis'})
+    )
+
+    xaxisname = "Referring Site"
+    title = "Popular Referring Sites"
+    fig_referring = px.bar(view, x='xaxis', y='yaxis', labels={'xaxis': xaxisname, 'yaxis': 'Quantity of Referrals'}, title=title)
+    fig_referring.update_layout(barmode='stack', xaxis={'categoryorder':'total descending'})
+
+    return fig_hours_day, fig_days_week, fig_days_month, fig_months_year, fig_weeks_year, fig_location, fig_referring
 
 
 def generate_layout(orders):
@@ -253,7 +276,10 @@ def generate_layout(orders):
         html.Div(children=[
             dcc.Graph(id='graph6'),
         ]),
-
+        html.H3("Referring Site: The website where the customer clicked a link to the shop."),
+        html.Div(children=[
+            dcc.Graph(id='graph7'),
+        ]),
     ])
 
     @app.callback(
@@ -263,7 +289,8 @@ def generate_layout(orders):
             Output('graph3', 'figure'),
             Output('graph4', 'figure'),
             Output('graph5', 'figure'),
-            Output('graph6', 'figure')
+            Output('graph6', 'figure'),
+            Output('graph7', 'figure')
         ],
         inputs=[
             Input('date-picker', 'start_date'),
