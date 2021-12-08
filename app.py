@@ -232,6 +232,7 @@ def generate_figures(orders, billing_address):
 
 def generate_layout(orders):
 
+    app.title = 'Hola Said Lola Custom Analytics'
     app.layout = html.Div(children=[
         html.H1(children='Hola Said Lola Analytics', style={'text-align': 'center'}),
         html.Div(children="A Dashboard for analyzing your audience.", style={'text-align': 'center'}),
