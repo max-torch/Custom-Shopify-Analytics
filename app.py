@@ -117,7 +117,7 @@ def preprocess_orders(orders):
     return orders
 
 
-def generate_figures(orders):
+def generate_figures(orders, location_filter=None):
     """
     Generates the graphs for the app. For each graph, a 'view' is generated from the main DataFrames.
     The sole purpose of the 'view' is to be an aggregation subset that contains only all the necessary
@@ -344,14 +344,14 @@ def generate_figures(orders):
             "customer_name"],
             values='current_total_price',
             hover_data=['customer_id'],
-            title="Profitable Locations and Customers (Metro Manila Aggregated)"
+            title="Profitable Provinces and Customers"
         )
         .update_traces(root_color="lightgrey")
         .update_layout(margin = dict(t=50, l=25, r=25, b=25))
     )
 
     if fake:
-        filtered_view = view[view["location"] == "Mordor"]
+        filtered_view = view[view["location"] == location_filter]
     else:
         filtered_view = view[view["location"] == "Metro Manila"]
     fig_tree_metro = (
@@ -361,7 +361,7 @@ def generate_figures(orders):
             color="city",
             color_discrete_map={'Quezon City': '#FECB52'},
             hover_data=["customer_id"],
-            title="Profitable Locations and Customers (Metro Manila separated by City) (If chart is not displayed, reduce the data range scope)"
+            title="Profitable Cities and Customer in Selected Province"
         )
         .update_layout(margin = dict(t=50, l=25, r=25, b=25))
     )
@@ -407,14 +407,11 @@ def generate_dashboard():
                     )
                 ], style={'float': 'left','margin': '15px'}),
                 html.Div([
-                    html.Strong(html.Label('Filter By City ')),
+                    html.Strong(html.Label('Filter By Province')),
                     dcc.Dropdown(
-                        id='city-list',
-                        options=[
-                            {'label': 'All', 'value': 'All'},
-                            {'label': 'Montreal', 'value': 'MTL'},
-                            {'label': 'San Francisco', 'value': 'SF'}
-                        ],
+                        id='location-list',
+                        options=[{'label': 'All', 'value': 'All'}] + 
+                        [{'label': location, 'value': location} for location in orders.province.dropna().unique()],
                         value='All'
                     ),
                 ], style={'float': 'left','margin': '15px', 'width': '200px'}),
@@ -467,10 +464,11 @@ def generate_dashboard():
         inputs=[
             Input('date-picker', 'start_date'),
             Input('date-picker', 'end_date'),
+            Input('location-list', 'value'),
             Input(component_id='my-store', component_property='data')
         ]
     )
-    def update_figures(start_date, end_date, orders):
+    def update_figures(start_date, end_date, location, orders):
         """
         This function is executed when the Callback is triggered. The Callback listens
         for when the specified components of the Dashboard change state.
@@ -478,8 +476,10 @@ def generate_dashboard():
 
         orderss = pd.DataFrame(json.loads(orders))
         orderss = orderss.assign(created_at=lambda x: pd.to_datetime(x.created_at))
-        date_filtered_orders = orderss[orderss.created_at.between(start_date, end_date)]
-        return generate_figures(date_filtered_orders)
+        filtered_orders = orderss[orderss.created_at.between(start_date, end_date)]
+        if not location == "All":
+            filtered_orders = filtered_orders[filtered_orders.province == location]
+        return generate_figures(filtered_orders, location)
 
 
 if __name__ == "__main__":
