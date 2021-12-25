@@ -1,16 +1,13 @@
 '''
-This module fetches data from a client's Shopify Store account. The data then serves as a data
-source for data visualizations.
-
-Run this app with `python app.py` and
-visit http://127.0.0.1:8050/ in your web browser.
+This module fetches data from a client's Shopify Store account, uses it to generate a dashboard, and starts a web application server
+in debug mode for app testing. Additional steps need to be taken to prepare this for deployment, such as using an appropriate
+production server.
 '''
-
 
 from time import time
 import json
-import webbrowser
 from urllib.parse import urlparse
+import datetime
 
 import dash
 from dash import dcc
@@ -21,10 +18,21 @@ import pandas as pd
 import requests
 import numpy as np
 
-
 # Global Variables
 RESOURCE = 'orders'
-FIELDS = ['id', 'app_id', 'buyer_accepts_marketing', 'cancel_reason', 'cancelled_at', 'client_details', 'closed_at', 'contact_email', 'created_at', 'current_subtotal_price', 'current_total_discounts', 'current_total_price', 'customer', 'discount_codes', 'email', 'financial_status', 'fulfillment_status', 'gateway', 'landing_site', 'name', 'order_number', 'payment_gateway_names', 'phone', 'processed_at', 'processing_method', 'referring_site', 'source_name', 'subtotal_price', 'total_discounts', 'total_line_items_price', 'total_outstanding', 'total_price', 'updated_at', 'billing_address', 'discount_applications', 'line_items', 'refunds', 'shipping_address']
+FIELDS = [
+    'id', 'app_id', 'buyer_accepts_marketing', 'cancel_reason', 'cancelled_at',
+    'client_details', 'closed_at', 'contact_email', 'created_at',
+    'current_subtotal_price', 'current_total_discounts', 'current_total_price',
+    'customer', 'discount_codes', 'email', 'financial_status',
+    'fulfillment_status', 'gateway', 'landing_site', 'name', 'order_number',
+    'payment_gateway_names', 'phone', 'processed_at', 'processing_method',
+    'referring_site', 'source_name', 'subtotal_price', 'total_discounts',
+    'total_line_items_price', 'total_outstanding', 'total_price', 'updated_at',
+    'billing_address', 'discount_applications', 'line_items', 'refunds',
+    'shipping_address'
+]
+fake = True
 
 # DataFrame that contains Philippines zipcodes mapped to their area and province/city
 zipcodes = (
@@ -38,29 +46,33 @@ zipcodesdict = pd.Series(zipcodes["Province or city"].values, index=zipcodes["ZI
 
 
 app = dash.Dash(__name__)
-pd.set_option("display.max_columns", None) # Set Pandas Display Options
+pd.set_option("display.max_columns", None)  # Set Pandas Display Options
 
 
+def main():
+    """Main routine."""
+    generate_dashboard()
+    app.run_server(debug=False)
+
+    
 def measure_time(func):
-    """This function shows the execution time of the function object passed in. This function is a decorator."""
+    """This function shows the execution time of the function object passed in. This function is meant to be used as a decorator."""
     def wrap_func(*args, **kwargs):
         t1 = time()
         result = func(*args, **kwargs)
         t2 = time()
         print(f'Function {func.__name__!r} executed in {(t2-t1):.4f}s')
         return result
+
     return wrap_func
 
 
 @measure_time
-def main():
-    orders = get_all_orders()
-    orders = preprocess_orders(orders)
-    generate_layout(orders)
-
-
 def get_all_orders():
-    """Fetch data from Shopify using Rest Admin API and store it in a DataFrame. Iteration is due to the API's constraint of only fetching a max of 250 rows."""
+    """
+    Fetches data from Shopify using Rest Admin API and stores it in a DataFrame. 
+    Iteration is due to the API's constraint of only fetching a max of 250 rows.
+    """
     with open('Credentials.json') as file:
         credentials = json.load(file)
     last = 0
@@ -73,45 +85,54 @@ def get_all_orders():
             'fields': ','.join(FIELDS)
         }
         url = f"https://{credentials['APIKEY']}:{credentials['APIPASS']}@{credentials['HOSTNAME']}/admin/api/{credentials['VERSION']}/{RESOURCE}.json"
-        r = requests.get(url, params = params)
+        r = requests.get(url, params=params)
         df = pd.DataFrame(r.json()['orders'])
-        orders = pd.concat([orders,df])
+        orders = pd.concat([orders, df])
         last = df['id'].iloc[-1]
         if len(df) < 250:
             break
-    return(orders)
+    return (orders)
 
 
 def preprocess_orders(orders):
-    orders = (
-        orders.drop(columns=['customer', 'client_details'])
-        .assign(
-            total_outstanding=pd.to_numeric(orders.total_outstanding),
-            created_at=pd.to_datetime(orders.created_at)
+    """Preprocess the orders DataFrame to prepare it for analysis and plot generation."""
+    if fake:
+        orders = (
+            orders.assign(
+                created_at=pd.to_datetime(orders.created_at),
+                billing_address=orders.billing_address.apply(lambda x: json.loads(x.replace("'", '"'))),
+                customer=orders.customer.apply(lambda x: json.loads(x.replace("'", '"')))
+            )
         )
-        .reset_index(drop=True)
-    )
+    else:
+        orders = (
+            orders.drop(columns=['client_details'])
+            .assign(
+                total_outstanding=pd.to_numeric(orders.total_outstanding),
+                created_at=pd.to_datetime(orders.created_at),
+                current_total_price=pd.to_numeric(orders.current_total_price)
+            )
+            .reset_index(drop=True)
+        )
     return orders
 
 
-def preprocess_billing_address(billing_address):
+def generate_figures(orders):
+    """
+    Generates the graphs for the app. For each graph, a 'view' is generated from the main DataFrames.
+    The sole purpose of the 'view' is to be an aggregation subset that contains only all the necessary
+    information that Plotly Express needs to read to generate figures. 
+    The figures are returned together as a tuple.
+    """
 
-    # DataFrame that contains Billing Addresses of each order
-    billing_address = (
-        billing_address.assign(
-            city=lambda x: x.city.str.upper().str.replace("CITY", "").str.strip(),
-            province=lambda x: x.province.replace(r'^\s*$', np.NaN, regex=True),
-            zip=lambda x: pd.to_numeric(x.zip.replace(r"[A-Z, a-z]", np.nan, regex=True).replace('', np.nan)),
-            province_city_fromzip=lambda x: x.zip.map(zipcodesdict).fillna(x.province).fillna(x.city)
-        )
-    )
-    return billing_address
-
-
-def generate_figures(orders, billing_address):
-
-    hours_dict = {each : (str(each) + ' AM' if each != 0 else '12 AM') for each in range(12)}
-    hours_dict_pm = {each : (str(each - 12) + ' PM' if each != 12 else '12 PM') for each in range(12, 24)}
+    hours_dict = {
+        each: (str(each) + ' AM' if each != 0 else '12 AM')
+        for each in range(12)
+    }
+    hours_dict_pm = {
+        each: (str(each - 12) + ' PM' if each != 12 else '12 PM')
+        for each in range(12, 24)
+    }
     hours_dict.update(hours_dict_pm)
 
     days_of_week_dict = {
@@ -139,10 +160,60 @@ def generate_figures(orders, billing_address):
         12: 'December'
     }
 
-    metro_cities = ['Manila', 'Quezon City', 'Caloocan', 'Las Piñas', 'Makati', 'Malabon', 'Mandaluyong', 'Marikina', 'Muntinlupa', 'Navotas', 'Parañaque', 'Pasay', 'Pasig', 'San Juan', 'Taguig', 'Valenzuela', 'Pateros']
+    metro_cities = [
+        'Manila', 'Quezon City', 'Caloocan', 'Las Piñas', 'Makati', 'Malabon',
+        'Mandaluyong', 'Marikina', 'Muntinlupa', 'Navotas', 'Parañaque',
+        'Pasay', 'Pasig', 'San Juan', 'Taguig', 'Valenzuela', 'Pateros'
+    ]
+
+    view_billing = (
+        pd.DataFrame(orders.billing_address)
+        .assign(
+            city=(
+                lambda x: x.billing_address
+                .apply(lambda y: y['city'] if pd.notnull(y) else y)
+                .str.title()
+                .str.replace("City", "")
+                .str.strip()
+            ),
+            province=(
+                lambda x: x.billing_address
+                .apply(lambda y: y['province'] if pd.notnull(y) else y)
+                .replace(r'^\s*$', np.NaN, regex=True)
+            ),
+            zip=(
+                lambda x: pd.to_numeric(
+                    x.billing_address
+                    .apply(lambda y: y['zip'] if pd.notnull(y) else y)
+                    .replace(r"[A-Z, a-z]", np.nan, regex=True)
+                    .replace('', np.nan)
+                )
+            ),
+            province_city_fromzip=(
+                lambda x: x.zip
+                .map(zipcodesdict)
+                .fillna(x.province)
+                .fillna(x.city)
+                .replace(r'^\s*$', np.NaN, regex=True)
+            ),
+            name=(
+                lambda x: x.billing_address
+                .apply(lambda y: y['name'] if pd.notnull(y) else y)
+            )
+        )
+    )
 
     # This section plots date and time trends.
-    def plot_popular_datetimes(datain, xaxisname: str, title: str, map_vals: bool, map_dict=None):
+    def plot_popular_datetimes(datain,
+                               xaxisname: str,
+                               title: str,
+                               map_vals: bool,
+                               map_dict=None):
+        """
+        Generates a 'view' DataFrame and plots it as a barchart. This function is
+        dedicated for generating figures of popular dates and times of orders.
+        You can make it show Popular Hours, Months, Days, etc depending on the input arguments.
+        """
         view = (
             pd.DataFrame(datain)
             .assign(
@@ -151,7 +222,14 @@ def generate_figures(orders, billing_address):
             )
             .reset_index(drop=True)
         )
-        fig = px.bar(view, x='xaxis', y='yaxis', labels={'xaxis': xaxisname, 'yaxis': 'Quantity of Orders'}, title=title)
+        fig = px.bar(view,
+                     x='xaxis',
+                     y='yaxis',
+                     labels={
+                         'xaxis': xaxisname,
+                         'yaxis': 'Quantity of Orders'
+                     },
+                     title=title)
         return fig
 
     fig_hours_day = plot_popular_datetimes(
@@ -194,26 +272,36 @@ def generate_figures(orders, billing_address):
 
     # This section plots location trends.
     view = (
-        pd.DataFrame(billing_address.province_city_fromzip.replace(r'^\s*$', np.NaN, regex=True).value_counts())
+        pd.DataFrame(view_billing.province_city_fromzip.value_counts())
         .reset_index(drop=False)
         .rename(columns={'index': 'xaxis', 'province_city_fromzip': 'yaxis'})
-        .assign(Province_or_City = lambda x: x.xaxis.apply(lambda y: 'Metro Manila' if y in metro_cities else y))
+        .assign(Province_or_City=lambda x: x.xaxis.apply(lambda y: 'Metro Manila' if y in metro_cities else y))
     )
 
     xaxisname = "Province or City"
     title = "Distribution of Orders over Billing Address Location"
-    fig_location = px.bar(view, x='Province_or_City', y='yaxis', labels={'xaxis': xaxisname, 'yaxis': 'Quantity of Orders'}, title=title, hover_data=["xaxis"])
-    fig_location.update_layout(barmode='stack', xaxis={'categoryorder':'total descending'})
+    fig_location = px.bar(view,
+                          x='Province_or_City',
+                          y='yaxis',
+                          labels={
+                              'xaxis': xaxisname,
+                              'yaxis': 'Quantity of Orders'
+                          },
+                          title=title,
+                          hover_data=["xaxis"])
+    fig_location.update_layout(barmode='stack',
+                               xaxis={'categoryorder': 'total descending'})
 
     # This section plots the referring sites
     def parse_url(url):
+        """Takes a url and isolates and returns its netloc. For example, 'https://www.google.com' returns 'google.com'."""
         parsed = urlparse(url)
         return parsed.netloc
 
     view = (
         pd.DataFrame(
             orders.referring_site
-            .fillna("")
+            .dropna()
             .apply(parse_url)
             .replace("", "No referring site or no data")
             .value_counts()
@@ -224,64 +312,145 @@ def generate_figures(orders, billing_address):
 
     xaxisname = "Referring Site"
     title = "Popular Referring Sites"
-    fig_referring = px.bar(view, x='xaxis', y='yaxis', labels={'xaxis': xaxisname, 'yaxis': 'Quantity of Referrals'}, title=title)
-    fig_referring.update_layout(barmode='stack', xaxis={'categoryorder':'total descending'})
+    fig_referring = px.bar(view,
+                           x='xaxis',
+                           y='yaxis',
+                           labels={
+                               'xaxis': xaxisname,
+                               'yaxis': 'Quantity of Referrals'
+                           },
+                           title=title)
+    fig_referring.update_layout(barmode='stack',
+                                xaxis={'categoryorder': 'total descending'})
 
-    return fig_hours_day, fig_days_week, fig_days_month, fig_months_year, fig_weeks_year, fig_location, fig_referring
+    # This section plots the treemaps
+    view = (
+        orders[["current_total_price"]]
+        .assign(
+            location=view_billing.province_city_fromzip,
+            city=view_billing.city,
+            customer_id=orders.customer.apply(lambda x: x['id'] if pd.notnull(x) else -1),
+            customer_name=orders.customer.apply(lambda x: (str(x['first_name']) + " " + str(x['last_name'])) if pd.notnull(x) else x)
+        )
+        .assign(location = lambda x: x.location.apply(lambda y: 'Metro Manila' if y in metro_cities else y))
+        .fillna("Missing Data")
+    )
+
+    fig_tree_all = (
+        px.treemap(
+            view,
+            path=[px.Constant("Orders"),
+            "location",
+            "customer_name"],
+            values='current_total_price',
+            hover_data=['customer_id'],
+            title="Profitable Locations and Customers (Metro Manila Aggregated)"
+        )
+        .update_traces(root_color="lightgrey")
+        .update_layout(margin = dict(t=50, l=25, r=25, b=25))
+    )
+
+    if fake:
+        filtered_view = view[view["location"] == "Mordor"]
+    else:
+        filtered_view = view[view["location"] == "Metro Manila"]
+    fig_tree_metro = (
+        px.treemap(
+            filtered_view, path=[px.Constant("Orders"), "location", "city", "customer_name"],
+            values='current_total_price',
+            color="city",
+            color_discrete_map={'Quezon City': '#FECB52'},
+            hover_data=["customer_id"],
+            title="Profitable Locations and Customers (Metro Manila separated by City) (If chart is not displayed, reduce the data range scope)"
+        )
+        .update_layout(margin = dict(t=50, l=25, r=25, b=25))
+    )
+
+    return fig_hours_day, fig_days_week, fig_days_month, fig_months_year, fig_weeks_year, fig_location, fig_referring, fig_tree_all, fig_tree_metro
 
 
-def generate_layout(orders):
+@measure_time
+def generate_dashboard():
+    """
+    Dynamically generates dashboard using Dash. Functionality of Forms and Controls are implemented
+    using 'callbacks'. Callbacks are decorators wherein the function below it is called when the
+    components that have been marked as 'Input' change state. In short, we can say that callbacks are 'triggers'.
+    The function output is then used by the callback to update the dashboard.
+    """
+    def prepare_layout():
+        """
+        The HTML layout is produced in this function and this function is assigned to `app.layout`. This is the procedure
+        described in Dash documentation on making data live update once every page load or page refresh. 
+        """
+        if fake:
+            print("Reading fake data")
+            orders = preprocess_orders(pd.read_csv('fake_data.csv', index_col=0))
+        else:
+            print("Fetching orders from Shopify")
+            orders = preprocess_orders(get_all_orders())
+
+        layout = html.Div(children=[
+            html.H1(children='Custom Shopify Analytics', style={'text-align': 'center'}),
+            html.Div(children="A Dashboard for analyzing your audience.", style={'text-align': 'center'}),
+            html.Div([
+                html.Div([
+                    html.Strong(html.Label('Filter By Date ')),
+                    html.Div(
+                        dcc.DatePickerRange(
+                            id='date-picker',
+                            min_date_allowed=orders.created_at.min().date(),
+                            max_date_allowed=orders.created_at.max().date(),
+                            initial_visible_month=orders.created_at.max().date(),
+                            start_date=orders.created_at.min().date(),
+                            end_date=orders.created_at.max().date()
+                        ), style={'float': 'inline-start'}
+                    )
+                ], style={'float': 'left','margin': '15px'}),
+                html.Div([
+                    html.Strong(html.Label('Filter By City ')),
+                    dcc.Dropdown(
+                        id='city-list',
+                        options=[
+                            {'label': 'All', 'value': 'All'},
+                            {'label': 'Montreal', 'value': 'MTL'},
+                            {'label': 'San Francisco', 'value': 'SF'}
+                        ],
+                        value='All'
+                    ),
+                ], style={'float': 'left','margin': '15px', 'width': '200px'}),
+            ],),
+            html.Div(children=[
+                dcc.Graph(id='graph1'),
+                dcc.Graph(id='graph2'),
+            ], style={'columnCount': 2, 'clear': 'both'}),
+            html.Div(children=[
+                dcc.Graph(id='graph3'),
+                dcc.Graph(id='graph4'),
+            ], style={'columnCount': 2}),
+            html.Div(children=[
+                dcc.Graph(id='graph5'),
+            ]),
+            html.Div(children=[
+                dcc.Graph(id='graph6'),
+            ]),
+            html.H3("Referring Site: The website where the customer clicked a link to the shop."),
+            html.Div(children=[
+                dcc.Graph(id='graph7'),
+            ]),
+            html.Div(children=[
+                dcc.Graph(id='graph8'),
+            ]),
+            html.Div(children=[
+                dcc.Graph(id='graph9'),
+            ]),
+            html.Div('The client\'s local time is: ' + str(datetime.datetime.now())),
+            html.Div(id="my-output"),
+            dcc.Store(id='my-store', data=orders.to_json(date_format='iso'))
+        ])
+        return layout
 
     app.title = 'Hola Said Lola Custom Analytics'
-    app.layout = html.Div(children=[
-        html.H1(children='Hola Said Lola Analytics', style={'text-align': 'center'}),
-        html.Div(children="A Dashboard for analyzing your audience.", style={'text-align': 'center'}),
-        html.Div([
-            html.Div([
-                html.Strong(html.Label('Filter By Date ')),
-                html.Div(
-                    dcc.DatePickerRange(
-                        id='date-picker',
-                        min_date_allowed=orders.created_at.min().date(),
-                        max_date_allowed=orders.created_at.max().date(),
-                        initial_visible_month=orders.created_at.max().date(),
-                        start_date=orders.created_at.min().date(),
-                        end_date=orders.created_at.max().date()
-                    ), style={'float': 'inline-start'}
-                )
-            ], style={'float': 'left','margin': '15px'}),
-            html.Div([
-                html.Strong(html.Label('Filter By City ')),
-                dcc.Dropdown(
-                    id='city-list',
-                    options=[
-                        {'label': 'All', 'value': 'All'},
-                        {'label': 'Montreal', 'value': 'MTL'},
-                        {'label': 'San Francisco', 'value': 'SF'}
-                    ],
-                    value='All'
-                ),
-            ], style={'float': 'left','margin': '15px', 'width': '200px'}),
-        ],),
-        html.Div(children=[
-            dcc.Graph(id='graph1'),
-            dcc.Graph(id='graph2'),
-        ], style={'columnCount': 2, 'clear': 'both'}),
-        html.Div(children=[
-            dcc.Graph(id='graph3'),
-            dcc.Graph(id='graph4'),
-        ], style={'columnCount': 2}),
-        html.Div(children=[
-            dcc.Graph(id='graph5'),
-        ]),
-        html.Div(children=[
-            dcc.Graph(id='graph6'),
-        ]),
-        html.H3("Referring Site: The website where the customer clicked a link to the shop."),
-        html.Div(children=[
-            dcc.Graph(id='graph7'),
-        ]),
-    ])
+    app.layout = prepare_layout
 
     @app.callback(
         output=[
@@ -291,22 +460,27 @@ def generate_layout(orders):
             Output('graph4', 'figure'),
             Output('graph5', 'figure'),
             Output('graph6', 'figure'),
-            Output('graph7', 'figure')
+            Output('graph7', 'figure'),
+            Output('graph8', 'figure'),
+            Output('graph9', 'figure')
         ],
         inputs=[
             Input('date-picker', 'start_date'),
-            Input('date-picker', 'end_date')
+            Input('date-picker', 'end_date'),
+            Input(component_id='my-store', component_property='data')
         ]
     )
-    def update_figures(start_date, end_date):
-        date_filtered_orders = orders[orders.created_at.between(start_date, end_date)]
-        billing_address = pd.json_normalize(date_filtered_orders[date_filtered_orders["billing_address"].notnull()]["billing_address"])
-        billing_address = preprocess_billing_address(billing_address)
-        return generate_figures(date_filtered_orders, billing_address)
+    def update_figures(start_date, end_date, orders):
+        """
+        This function is executed when the Callback is triggered. The Callback listens
+        for when the specified components of the Dashboard change state.
+        """
+
+        orderss = pd.DataFrame(json.loads(orders))
+        orderss = orderss.assign(created_at=lambda x: pd.to_datetime(x.created_at))
+        date_filtered_orders = orderss[orderss.created_at.between(start_date, end_date)]
+        return generate_figures(date_filtered_orders)
 
 
 if __name__ == "__main__":
     main()
-    webbrowser.open('http://127.0.0.1:8050/')
-    app.run_server(debug=False)
-    
