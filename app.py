@@ -47,7 +47,6 @@ zipcodesdict = pd.Series(zipcodes["Province or city"].values, index=zipcodes["ZI
 
 app = dash.Dash(__name__)
 server = app.server
-pd.set_option("display.max_columns", None)  # Set Pandas Display Options
 
 
 def main():
