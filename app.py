@@ -48,13 +48,7 @@ zipcodesdict = pd.Series(zipcodes["Province or city"].values, index=zipcodes["ZI
 app = dash.Dash(__name__)
 server = app.server
 
-
-def main():
-    """Main routine."""
-    generate_dashboard()
-    app.run_server(debug=False)
-
-    
+   
 def measure_time(func):
     """This function shows the execution time of the function object passed in. This function is meant to be used as a decorator."""
     def wrap_func(*args, **kwargs):
@@ -468,6 +462,7 @@ def generate_dashboard():
             Input(component_id='my-store', component_property='data')
         ]
     )
+
     def update_figures(start_date, end_date, location, orders):
         """
         This function is executed when the Callback is triggered. The Callback listens
@@ -482,5 +477,6 @@ def generate_dashboard():
         return generate_figures(filtered_orders, location)
 
 
+generate_dashboard() # Will not work if placed inside 'if __name__ == "__main__:"'
 if __name__ == "__main__":
-    main()
+    app.run_server(debug=False)
