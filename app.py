@@ -44,11 +44,12 @@ zipcodes = (
 # Dictionary from zipcodes DataFrame for Pandas Series.map() method.
 zipcodesdict = pd.Series(zipcodes["Province or city"].values, index=zipcodes["ZIP_Code"]).to_dict()
 
+external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
-app = dash.Dash(__name__)
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
 
-   
+
 def measure_time(func):
     """This function shows the execution time of the function object passed in. This function is meant to be used as a decorator."""
     def wrap_func(*args, **kwargs):
@@ -477,6 +478,6 @@ def generate_dashboard():
         return generate_figures(filtered_orders, location)
 
 
-generate_dashboard() # Will not work if placed inside 'if __name__ == "__main__:"'
+generate_dashboard() # Will not work if placed inside 'if __name__ == "__main__:"'; It has to run if app.py is imported and not __main__.
 if __name__ == "__main__":
     app.run_server(debug=False)
