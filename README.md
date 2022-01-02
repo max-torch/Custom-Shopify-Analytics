@@ -3,7 +3,7 @@ In a terminal, run<br>
 `pip install -r requirements.txt`<br>
 to download and install all the required dependencies of the app.
 
-Currently, it is hardcoded (the line is near the top) to use fake data from fake_data.csv. You must set change `fake = True` to `fake = False` to make it use API credentials.
+Currently, it is hardcoded (the line is near the top) to use fake data from fake_data.csv. You must change `fake = True` to `fake = False` to make it use API credentials.
 
 After installing, you must create a JSON file named `Credentials.json` which contains the following:
 ```
