@@ -1,3 +1,6 @@
+# Sample App Deployed on Heroku reading from a fake dataset
+[App on Heroku](https://custom-shopify-analytics.herokuapp.com/)
+
 # Installation
 In a terminal, run<br>
 `pip install -r requirements.txt`<br>
