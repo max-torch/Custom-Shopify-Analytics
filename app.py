@@ -384,61 +384,66 @@ def generate_dashboard():
             print("Fetching orders from Shopify")
             orders = preprocess_orders(get_all_orders())
 
-        layout = html.Div(children=[
-            html.H1(children='Custom Shopify Analytics', style={'text-align': 'center'}),
-            html.Div(children="A Dashboard for analyzing your audience.", style={'text-align': 'center'}),
-            html.Div([
+        layout = dcc.Loading(
+            id="loading-1",
+            type="default",
+            fullscreen=True,
+            children=html.Div(children=[
+                html.H1(children='Custom Shopify Analytics', style={'text-align': 'center'}),
+                html.Div(children="A Dashboard for analyzing your audience.", style={'text-align': 'center'}),
                 html.Div([
-                    html.Strong(html.Label('Filter By Date ')),
-                    html.Div(
-                        dcc.DatePickerRange(
-                            id='date-picker',
-                            min_date_allowed=orders.created_at.min().date(),
-                            max_date_allowed=orders.created_at.max().date(),
-                            initial_visible_month=orders.created_at.max().date(),
-                            start_date=orders.created_at.min().date(),
-                            end_date=orders.created_at.max().date()
-                        ), style={'float': 'inline-start'}
-                    )
-                ], style={'float': 'left','margin': '15px'}),
-                html.Div([
-                    html.Strong(html.Label('Filter By Province')),
-                    dcc.Dropdown(
-                        id='location-list',
-                        options=[{'label': 'All', 'value': 'All'}] + 
-                        [{'label': location, 'value': location} for location in orders.province.dropna().unique()],
-                        value='All'
-                    ),
-                ], style={'float': 'left','margin': '15px', 'width': '200px'}),
-            ],),
-            html.Div(children=[
-                dcc.Graph(id='graph1'),
-                dcc.Graph(id='graph2'),
-            ], style={'columnCount': 2, 'clear': 'both'}),
-            html.Div(children=[
-                dcc.Graph(id='graph3'),
-                dcc.Graph(id='graph4'),
-            ], style={'columnCount': 2}),
-            html.Div(children=[
-                dcc.Graph(id='graph5'),
-            ]),
-            html.Div(children=[
-                dcc.Graph(id='graph6'),
-            ]),
-            html.H3("Referring Site: The website where the customer clicked a link to the shop."),
-            html.Div(children=[
-                dcc.Graph(id='graph7'),
-            ]),
-            html.Div(children=[
-                dcc.Graph(id='graph8'),
-            ]),
-            html.Div(children=[
-                dcc.Graph(id='graph9'),
-            ]),
-            html.Div('The client\'s local time is: ' + str(datetime.datetime.now())),
-            html.Div(id="my-output"),
-            dcc.Store(id='my-store', data=orders.to_json(date_format='iso'))
-        ])
+                    html.Div([
+                        html.Strong(html.Label('Filter By Date ')),
+                        html.Div(
+                            dcc.DatePickerRange(
+                                id='date-picker',
+                                min_date_allowed=orders.created_at.min().date(),
+                                max_date_allowed=orders.created_at.max().date(),
+                                initial_visible_month=orders.created_at.max().date(),
+                                start_date=orders.created_at.min().date(),
+                                end_date=orders.created_at.max().date()
+                            ), style={'float': 'inline-start'}
+                        )
+                    ], style={'float': 'left','margin': '15px'}),
+                    html.Div([
+                        html.Strong(html.Label('Filter By Province')),
+                        dcc.Dropdown(
+                            id='location-list',
+                            options=[{'label': 'All', 'value': 'All'}] + 
+                            [{'label': location, 'value': location} for location in orders.province.dropna().unique()],
+                            value='All'
+                        ),
+                    ], style={'float': 'left','margin': '15px', 'width': '200px'}),
+                ],),
+                html.Div(children=[
+                    dcc.Graph(id='graph1'),
+                    dcc.Graph(id='graph2'),
+                ], style={'columnCount': 2, 'clear': 'both'}),
+                html.Div(children=[
+                    dcc.Graph(id='graph3'),
+                    dcc.Graph(id='graph4'),
+                ], style={'columnCount': 2}),
+                html.Div(children=[
+                    dcc.Graph(id='graph5'),
+                ]),
+                html.Div(children=[
+                    dcc.Graph(id='graph6'),
+                ]),
+                html.H3("Referring Site: The website where the customer clicked a link to the shop."),
+                html.Div(children=[
+                    dcc.Graph(id='graph7'),
+                ]),
+                html.Div(children=[
+                    dcc.Graph(id='graph8'),
+                ]),
+                html.Div(children=[
+                    dcc.Graph(id='graph9'),
+                ]),
+                html.Div('The client\'s local time is: ' + str(datetime.datetime.now())),
+                html.Div(id="my-output"),
+                dcc.Store(id='my-store', data=orders.to_json(date_format='iso'))
+            ])
+        )
         return layout
 
     app.title = 'Hola Said Lola Custom Analytics'
